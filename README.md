@@ -2,7 +2,7 @@
 
 ![Photo of DSM-232 SPI Flash being flashed](doc/images/dsm232-hack.jpg?raw=true)
 
-This is an attempt to hack D-Link DSM-232 that runs on Cavium/Celstial CNW6611L/CNS1800L SOC platform.
+This is an attempt to hack D-Link DSM-232 that runs on Cavium/Celstial CNW6611L/CNC1800L SOC platform.
 Currently, it can generate SPI Flash image that contains miniloader and user-controllable bits signed with
 GPL-published RSA key, ready to run on DSM-232.
 
@@ -25,9 +25,8 @@ breakage (these things happen), I can always recover by just flashing SPI flash 
 directly wiring to the chip.
 
 # NOTE
-Currently, simple app that blinks LED on gpio2 will be included in SPI Flash image,
-and miniloader will boot into it. See second-param.yaml, image.lds, and blink.lds for
-on-SPI-flash and on-memory layout.
+Currently, app.bin included in SPI Flash image is a symbolic links to app/blink/blink.bin that blinks LED on gpio2.
+See second-param.yaml, image.lds, and blink.lds for on-SPI-flash and on-memory layout.
 
 # NOTE 2
 If you want to go by yourself, key takeaway is that miniloader and RSA key for DSM-260 v1.04 were essentially needed to
