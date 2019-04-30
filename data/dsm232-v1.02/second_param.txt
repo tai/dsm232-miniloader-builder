@@ -1,0 +1,16 @@
+0xb000			; miniloader size
+0x80000			; Second boot loader flash entry
+0x5FF00			; Second boot loader size
+0x2000000		; Second boot loader execution entry
+0x00001500	;	DRAM config 1300M, do not change
+0x87b820b1	; DRAM config 1300M, do not change
+0xb6514255	;	DRAM config 1300M, do not change	
+0x3c3c3c3c	;	DRAM config 1300M, do not change	
+0x28182818	; DRAM config 1300M, do not change	
+0x7200c379	; DRAM config 1300M, do not change	
+0x20000			; Nand flash block size. No use now, block size is auto detected.
+0x1					; Enable nand flash bad block detection. No use now, always enabled.
+0x8b						; spi 0x9b nand 0x83				;	bit7: 0 - used previous flash config from board 1 - use different flash config from flash   nand cfg: bit4: 0, bit3: 0 - 3 cycle 1 - 2, bit1~2: 0 - page size 512, 1 - 2048, 2 - 4096, 3 - reserved bit0: reserved; spi cfg:  bit4: 1, bit3~2: 0 - 8bit, 1 - 16bit, 2 - 24bit, 3 - reserved bit1: 0 - low speed, 1 - high speed bit0: reserved
+0x1					; dual boot supported
+0x2					; DRAM parameter, do not change
+0xe					; DRAM parameter, do not change

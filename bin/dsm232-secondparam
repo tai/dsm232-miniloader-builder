@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8-unix -*-
+"""
+# About
+This is a tool to generate binary of D-Link DSM-232 (aka G-Cluster
+cloud gaming console) boot configuration.
+
+It can be used to program 0xb500-0xb600 range of SPI Flash ROM,
+which primarily instructs miniloader where and how to load Secondary
+Boot Loader (SBL, usually U-Boot).
+
+This tool is part of the dsm232-miniloader-builder tool, that
+generates whole SPI Flash ROM image.
+
+# Secure Boot Sequence
+
+DSM-232 (and probably other CNW6611L/CNC1800L SOC based boards) runs
+through following 4-staged boot sequence:
+
+1. ROM bootcode
+2. miniloader
+3. U-Boot
+4. Linux kernel
+
+On startup, ROM bootcode loads miniloader, miniloader loads U-Boot,
+and U-Boot loads Linux kernel. By default, every step enforces code
+signature verification, so no code signed by Cavium/Celstial or
+D-Link will execute. However, U-Boot can also load non-signed binary
+using standard "boot <addr>" command.
+
+Boot configuration (second-param) is loaded in part of stage 1 and 2
+execution. There are 2 "second-param" regions - first one as factory-
+embedded default, and another one as vendor-modifiable configuration.
+You can only change the latter part.
+
+# SPI Flash memory map
+
+Following is the discovered layout of on-board SPI Flash memory.
+
+  0x0000 START
+  ...padding...
+  0x0204-0x0300 second-param-0
+  0x0300-0x0400 signature for second-param-0 (signed by Cavium)
+  0x0400-0xb400 miniloader (core binary)
+  0xb400-0xb500 signature for miniloader (core binary) (signed by Cavium)
+  0xb500-0xb600 second-param-1
+  0xb500-0xb600 signature for second-param-1 (signed by developer)
+  0xc000-0xe000 nvram for u-boot (see uboot-nvram(1))
+  ...padding...
+  0x10000 END-OF-FIRST-64KB
+  ...unused...(factory default contains the same copy of first 64KB)
+  0x20000 END
+
+As the range 0x0204-0xb500 is Cavium-signed, any change in byte will
+cause ROM bootcode to halt. You can only change other byteranges.
+
+"""
+
+SAMPLE = """
+#
+# Sample boot configuration (second-param) for DSM-232 miniloader
+#
+# Binary encoded parameter is placed on 0xb500-0xb600 region, with
+# 0x00 as default padding. For secureboot configuration (which DSM-232
+# is), RSA signature of the region must also be placed on 0xb600-0xb700.
+#
+---
+# Size of miniloader from entry point.
+#
+# Entry point is 0x400 on DSM-232, so miniloader ends at 0xb400, with
+# tailing 256B signature to 0xb500.
+miniloader_size: 0xb000
+
+# NAND-OK: original
+# - Note that size is 256bytes smaller than actual MTD partition.
+#   This is because ending 256B holds RSA signature of the image.
+#boot2_flash_address: 0x20000
+#boot2_size: 0x7ff00
+#boot2_start_address: 0x2000000
+
+# SPI-OK: try loading from SPI Flash
+boot2_flash_address: 0xb800
+boot2_size: 0x300
+boot2_start_address: 0x2000000
+
+#
+# OK: DRAM config 1300M, do not change
+# - This came from firmware dump of DSM-232 SPI Flash image
+#
+#dram_config:
+#- 0x00001500
+#- 0x87b820b1
+#- 0xb6514255
+#- 0x3c3c3c3c
+#- 0x28182818
+#- 0x7200c379
+
+#
+# OK: Other working DRAM configuration
+# - This came from signed_miniloader.bin in DSM-260 v1.04 GPL archive
+dram_config:
+- 0x00001400
+- 0x87b820b1
+- 0xb641c365
+- 0x3c3c3c3c
+- 0x28182818
+- 0x7200c379
+
+# No use now, block size is auto detected.
+nand_block_size: 0x20000
+
+# No use now, always enabled.
+nand_detect_badblock: 1
+
+#
+# config_flags
+#
+# === for NAND (ex: 0x83) ===
+# 0b10001011
+#   ^0:use previous flash config from board
+#    1:use different flash config from flash
+#    ^^skip
+#      ^always 0 (=NAND?)
+#       ^0:address cycle is 3
+#        1:address cycle is 2
+#        ^^0:pagesize=512, 1:2048, 2:4096, 3:reserved
+#          ^reserved
+#
+# === for SPI (ex: 0x9b) ===
+# 0b10011011
+#   ^0:use previous flash config from board
+#    1:use different flash config from flash
+#    ^^skip
+#      ^always 1 (=SPI?)
+#       ^^0:8bit, 1:16bit, 2:24bit, 3:reserved
+#         ^0:low-speed, 1:high-speed
+#          ^reserved
+#
+
+# NAND-OK: original
+# - Use this to load SBL from NAND Flash
+#config_flags: 0x8b
+
+# SPI-OK: for SBL on SPI
+# - This came from various miniloader.bin files in D-Link GPL archive
+# - Contradicts with info in original D-Link archive, but this does
+#   boot to SBL on SPI Flash
+config_flags: 0x0
+
+# Only matters when placed as second-param-0 on 0x0204-0x0300.
+# This flag controls miniloader to use second-param-1 on 0xb500-0xb600 (with
+# optional verification of signature on 0xb600-0xb700).
+dual_boot: 0
+
+# Extra DRAM parameter, do not change
+dram_config_extra:
+- 0x2
+- 0xe
+""".lstrip()
+
+import sys
+import os
+import yaml
+
+from argparse import ArgumentParser
+from struct import pack, unpack
+
+#
+# Layout of second-param on SPI Flash
+#
+BLOCK_DEF = (
+    # 0x204 or 0xb500
+    ('miniloader_size', 'I', 0x0000b000),
+    ('boot2_flash_address', 'I', 0x00020000),
+    ('boot2_size', 'I', 0x0007ff00),
+    
+    # 0x210, 0x220
+    ('boot2_start_address', 'I', 0x02000000),
+    ('dram_config', 'IIIIII',
+     (0x00001500, 0x87b820b1, 0xb6514255, 0x3c3c3c3c, 0x28182818, 0x7200c379)
+    ),
+    ('nand_block_size', 'I', 0x00020000),
+
+    # 0x230
+    ('nand_detect_badblock', 'B', 0x01),
+    ('config_flags', 'B', 0x8b),
+    ('dual_boot', 'H', 0x0001),
+    ('dram_config_extra', 'II', (0x00000002, 0x0000000e)),
+)
+
+def format_usage():
+    p = os.path.basename(sys.argv[0])
+    return """
+{p} - Convert param block of DSM-232/DSM260 SPI Flash memory
+Usage: {p} [-d] <file>
+Options:
+  -d, --decode: Decode binary into YAML
+  -e, --encode: Encode YAML into binary
+  -c, --config: Show sample YAML configuration
+  -s, --size: Binary read/write size (= 0x40)
+Example:
+  $ {p} -c
+  $ {p} -c | {p} /dev/stdin | {p} -d /dev/stdin
+""".lstrip().format(**locals())
+
+def usage():
+    sys.stderr.write(format_usage())
+    sys.exit(0)
+
+######################################################################
+
+class HexInt(int): pass
+
+def representer(dumper, data):
+    return yaml.ScalarNode('tag:yaml.org,2002:int', hex(data))
+
+yaml.add_representer(HexInt, representer)
+
+######################################################################
+
+def block_size(block_format):
+    field_size = { 'I': 4, 'H': 2, 'B': 1 }
+    return sum([field_size[i] for i in block_format])
+
+def do_decode(buf, wrapfunc=None):
+    block_format = "".join([i[1] for i in BLOCK_DEF])
+
+    block_len = block_size(block_format)
+    block_dec = unpack("<" + block_format, buf[0:block_len])
+
+    if wrapfunc:
+        block_dec = [wrapfunc(i) for i in block_dec]
+
+    result = {}
+    offset = 0
+    for fname, fformat, fsample in BLOCK_DEF:
+        fdata = block_dec[offset:offset + len(fformat)]
+        result[fname] = fdata if len(fdata) > 1 else fdata[0]
+        offset += len(fformat)
+
+    return result
+
+def do_encode(par):
+    buf = b''
+    for fname, fformat, fsample in BLOCK_DEF:
+        args = [par[fname]] if len(fformat) == 1 else par[fname]
+        buf += pack("<" + fformat, *args)
+    return buf
+
+def to_int(v):
+    return int(v, 0)
+
+def main(ctx):
+    opt = ctx.opt
+    filename = opt.files[0]
+
+    if opt.decode:
+        buf = open(filename, "rb").read(opt.size)
+        dec = do_decode(buf, HexInt)
+        print(yaml.dump(dec, default_flow_style=False))
+    else:
+        par = yaml.load(open(filename))
+        enc = do_encode(par)
+        sys.stdout.buffer.write(enc.ljust(opt.size, b'\x00'))
+
+if __name__ == '__main__' and '__file__' in globals():
+    ap = ArgumentParser()
+    ap.format_help = ap.format_usage = format_usage
+    ap.add_argument('-d', '--decode', action='store_true')
+    ap.add_argument('-e', '--encode', action='store_true')
+    ap.add_argument('-c', '--config', action='store_true')
+    ap.add_argument('-s', '--size', type=to_int, default=0x40)
+    ap.add_argument('files', nargs='*')
+
+    opt = ap.parse_args()
+
+    if opt.config:
+        print(SAMPLE)
+        sys.exit(0)
+
+    if not opt.files:
+        usage()
+
+    if opt.decode:
+        opt.encode = False
+
+    ctx = lambda:0
+    ctx.opt = opt
+    main(ctx)

@@ -1,0 +1,89 @@
+#
+# Binary encoded parameter is placed on 64B block from 0xb500.
+# All remaining part of the block is filled with 0x00.
+#
+---
+miniloader_size: 0xb000
+
+# NAND-OK: original
+#boot2_flash_address: 0x20000
+#boot2_size: 0x7ff00
+#boot2_start_address: 0x2000000
+
+# SPI-OK: try loading from upper 64KB of SPI ROM
+boot2_flash_address: 0xb800
+boot2_size: 0x300
+boot2_start_address: 0x2000000
+
+# ??: boot from blink.bin on 0x1000 and 0x2000 on NAND
+#boot2_flash_address: 0x200000
+#boot2_size: 0x1000
+#boot2_start_address: 0x2000000
+
+# NG: boot from binary written to NAND@0x200000
+#boot2_flash_address: 0x200000
+#boot2_size: 0x4000
+# start address must sync with blink.lds
+#boot2_start_address: 0x2000000
+
+#
+# OK: DRAM config 1300M, do not change
+#
+#dram_config:
+#- 0x00001500
+#- 0x87b820b1
+#- 0xb6514255
+#- 0x3c3c3c3c
+#- 0x28182818
+#- 0x7200c379
+
+# from 0xb500 @ DSM-260 v1.04
+dram_config:
+- 0x00001400
+- 0x87b820b1
+- 0xb641c365
+- 0x3c3c3c3c
+- 0x28182818
+- 0x7200c379
+
+# No use now, block size is auto detected.
+nand_block_size: 0x20000
+
+# No use now, always enabled.
+nand_detect_badblock: 1
+
+#
+# === for NAND (ex: 0x83) ===
+# 0b10000011
+#   ^0:use previous flash config from board
+#    1:use different flash config from flash
+#    ^^skip
+#      ^always 0 (=NAND?)
+#       ^0:address cycle is 3
+#        1:address cycle is 2
+#        ^^0:pagesize=512, 1:2048, 2:4096, 3:reserved
+#          ^reserved
+#
+# === for SPI (ex: 0x9b) ===
+# 0b10011011
+#   ^0:use previous flash config from board
+#    1:use different flash config from flash
+#    ^^skip
+#      ^always 1 (=SPI?)
+#       ^^0:8bit, 1:16bit, 2:24bit, 3:reserved
+#         ^0:low-speed, 1:high-speed
+#          ^reserved
+#
+
+# NAND-OK: original
+#config_flags: 0x8b
+
+# SPI-OK: Use SPI-Flash only
+config_flags: 0x0
+
+dual_boot: 0
+
+# Extra DRAM parameter, do not change
+dram_config_extra:
+- 0x2
+- 0xe

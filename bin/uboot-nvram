@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8-unix -*-
+
+import sys
+import os
+
+from zlib import crc32
+from struct import pack, unpack
+from argparse import ArgumentParser
+#from IPython import embed
+
+import logging
+log = logging.getLogger(__name__)
+
+def format_usage():
+    p = os.path.basename(sys.argv[0])
+    return """
+{p} - Convert U-Boot NVRAM data to text and back
+Usage: {p} [option] <input-files...>
+Options:
+  -D, --debug <level>: Debug level ('INFO', 'DEBUG', ...)
+  -d, --decode       : Do binary-to-text conversion
+  -s, --size <size>  : Binary block size to generate padding
+Example:
+  $ {p} -d < nvram.bin > nvram.txt
+  $ {p} -s 0x2000 < nvram.txt > nvram.bin
+""".lstrip().format(**locals())
+
+def usage():
+    sys.stderr.write(format_usage())
+    sys.exit(0)
+
+def do_decode(buf):
+    """Return plain string of given encoded bytes"""
+    # skip CRC32 header and trailing paddings
+    buf = buf[4:].rstrip(b'\xFF').rstrip(b'\x00')
+    # use newline as a separator
+    buf = buf.replace(b'\x00', b'\n') + b'\n'
+    # convert it to string
+    return buf.decode()
+
+def do_encode(txt, size=0x2000):
+   """Return encoded bytes of given text/size"""
+   buf = txt.encode()
+   buf = buf.replace(b'\n', b'\x00')
+   buf = buf.ljust(size - 4, b'\x00')
+   return pack("<I", crc32(buf)) + buf
+
+def main(ctx):
+    if ctx.opt.decode:
+        ios = [open(arg, 'rb') for arg in ctx.opt.args]
+        ios = ios if ios else [sys.stdin.buffer]
+        for io in ios:
+            print(do_decode(io.read()), end="")
+    else:
+        ios = [open(arg) for arg in ctx.opt.args]
+        ios = ios if ios else [sys.stdin]
+        txt = "".join([io.read() for io in ios])
+        sys.stdout.buffer.write(do_encode(txt, ctx.opt.size))
+
+def to_int(v):
+  return int(v, 0)
+
+if __name__ == '__main__' and '__file__' in globals():
+    ap = ArgumentParser()
+    ap.format_usage = ap.format_help = format_usage
+
+    ap.add_argument('-D', '--debug', default='WARN')
+    ap.add_argument('-d', '--decode', action='store_true')
+    ap.add_argument('-s', '--size', type=to_int, default=0x2000)
+    ap.add_argument('args', nargs='*')
+
+    opt = ap.parse_args()
+    logging.basicConfig(level=eval('logging.' + opt.debug))
+
+    ctx = lambda:0
+    ctx.opt = opt
+    main(ctx)
