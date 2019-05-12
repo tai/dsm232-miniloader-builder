@@ -32,19 +32,9 @@ SECTIONS {
     app.bin.o(.data)
     FILL(0x00);
 
-    . = 0xbb00;
+    . = 0x1b800;
     app.sig.o(.data)
     FILL(0x9A);
-
-    /*
-     * hash-or-sign for boot2 image
-     * = boot2_start (0xbc00) + boot2_size (0x6ff00) on 128KB ROM
-     */
-    . = 0x1bb00;
-    FILL(0x9B);
-
-    . = 0x1bc00;
-    FILL(0x9C);
 
 /*
     . = 0xb700;

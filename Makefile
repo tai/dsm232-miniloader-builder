@@ -17,8 +17,13 @@ SP_BIN = $(SP_YML:.yaml=.bin)
 SP_SHA = $(SP_BIN:.bin=.sha)
 SP_SIG = $(SP_BIN:.bin=.sig)
 
+# NOTE:
+# - APP_BS is whole size of app code block in memory layout
 APP_BIN = app.bin
 APP_SIG = app.sig
+#APP_BS  = 0x300
+APP_BS  = 0x10000
+#APP_BS  = 0xff00
 
 BINS = $(CL_BIN) $(SP_BIN) $(SP_SHA) $(SP_SIG) $(NV_BIN) $(APP_SIG)
 OBJS = $(CL_BIN).o $(SP_BIN).o $(SP_SIG).o $(NV_BIN).o \
@@ -82,6 +87,7 @@ check: $(TARGET) $(RSAPUB)
 	-signature sp-tmp.sig -verify $(RSAPUB) sp-tmp.bin
 	rm sp-tmp.*
 # verify SBL
+# FIXME: Need to be updated to use new blink2 size
 	bbe -s -b $$((0xb800)):$$((0x300)) $(TARGET) > app-tmp.bin
 	bbe -s -b $$((0xbb00)):$$((0x100)) $(TARGET) > app-tmp.sig
 	openssl sha1 -sha256 \
@@ -102,7 +108,7 @@ $(CL_BIN): $(ML_BIN)
 $(NV_BIN): $(NV_TXT)
 	uboot-nvram -s 0x2000 < $< > $@
 
-# NOTE: Need signature for whole 256B block
+# NOTE: Need signature for whole app block size, not app binary size
 $(SP_SIG): $(SP_BIN)
 	dd if=/dev/zero of=part1_temp.bin bs=256 count=1
 	dd if=$< of=part1_temp.bin conv=notrunc
@@ -111,7 +117,7 @@ $(SP_SIG): $(SP_BIN)
 
 # NOTE: Need signature for the whole SBL block
 $(APP_SIG): $(APP_BIN)
-	dd if=/dev/zero of=app_temp.bin bs=$$((0x300)) count=1
+	dd if=/dev/zero of=app_temp.bin bs=$$(($(APP_BS))) count=1
 	dd if=$< of=app_temp.bin conv=notrunc
 	openssl sha1 -sha256 -sign $(RSAKEY) < app_temp.bin > $@
 	rm -f app_temp.bin

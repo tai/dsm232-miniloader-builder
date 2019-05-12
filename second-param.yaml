@@ -10,9 +10,9 @@ miniloader_size: 0xb000
 #boot2_size: 0x7ff00
 #boot2_start_address: 0x2000000
 
-# SPI-OK: try loading from upper 64KB of SPI ROM
+# SPI-OK: load custom app from 0xb800
 boot2_flash_address: 0xb800
-boot2_size: 0x300
+boot2_size: 0x10000
 boot2_start_address: 0x2000000
 
 # ??: boot from blink.bin on 0x1000 and 0x2000 on NAND
